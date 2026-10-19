@@ -50,7 +50,9 @@ When none is set, tell the user how to set one up:
    ```
 4. To make it available in every session, load it from a secret manager when the shell starts (for example, `export GITLAB_TOKEN="$(secret-tool lookup service gitlab)"`) rather than writing the token itself into `~/.bashrc` or another plaintext profile. Never write the token into a profile on the user's behalf.
 
-Personal, project, and group access tokens, OAuth 2.0 tokens, and CI/CD job tokens all work as values for this variable — the skill doesn't care which type it is or what its name is, only that it arrives via a discoverable environment variable.
+Personal, project, and group access tokens and OAuth 2.0 access tokens all work with the requests in this skill, whatever the variable is named.
+
+CI/CD job tokens (`CI_JOB_TOKEN`) are not supported. GitLab accepts them only in a `JOB-TOKEN` header, only on a restricted allowlist of endpoints that excludes `GET /user` and issues, never for GraphQL, and only while the job runs. If a job token is the only credential available, stop and tell the user. Do not send it as `PRIVATE-TOKEN` or `Bearer`, and do not adapt the procedures below to it. A `401` from the `GET /user` check in [step 3](#3-verifying-before-you-act) can mean the selected variable holds a job token.
 
 **Never echo the token** into output shown to the user, into a file, or into a commit. Never place it directly on a command line or in a URL, because command arguments are visible to other processes. Pass it to curl the way every example below does: `--header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN")`. `printf` is a Bash builtin, so the value only travels through a pipe and curl's argument list shows `@/dev/fd/N` instead of the token. A process substitution can be read once, so give each `curl` call its own rather than storing it in a variable.
 
