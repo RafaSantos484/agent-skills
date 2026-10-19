@@ -53,23 +53,21 @@ written.** If the finding is real but deliberately not worth fixing right now,
 that is `accept`, not code changes and not `falsepositive`.
 
 ```bash
-AUTH=(-H "Authorization: Bearer $SONAR_TOKEN")
-
 # The issue does not describe a real defect.
-curl -sS -X POST "${AUTH[@]}" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/do_transition" \
   --data-urlencode "issue=$ISSUE_KEY" \
   --data-urlencode "transition=falsepositive"
 
 # The issue is real but deliberately accepted as-is.
 # `accept` on SonarQube 10.4+; older servers use `wontfix`.
-curl -sS -X POST "${AUTH[@]}" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/do_transition" \
   --data-urlencode "issue=$ISSUE_KEY" \
   --data-urlencode "transition=accept"
 
 # Always record why, so the decision survives the next analysis.
-curl -sS -X POST "${AUTH[@]}" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/add_comment" \
   --data-urlencode "issue=$ISSUE_KEY" \
   --data-urlencode "text=<justification>"

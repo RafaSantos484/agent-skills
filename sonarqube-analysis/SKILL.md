@@ -25,20 +25,19 @@ Resolve these in order before touching code or the API:
 
 ## 1. Authentication
 
-Authenticate **exclusively** through an environment variable holding a
-**User Token**, not a Project Analysis Token (analysis tokens can submit
-scans but cannot read or transition issues). The variable's exact **name** is
-not fixed to `SONAR_TOKEN`: real setups often carry several SonarQube-token-
-shaped candidates side by side (`SONAR_TOKEN`, `SONAR_BOT_TOKEN`,
-`SONARQUBE_PERSONAL_TOKEN`, …), so discover which ones exist before picking
-one.
+Authenticate **only** through an exported environment variable holding a
+**User Token**. A Project Analysis Token can submit scans but cannot read or
+transition issues. The variable's name is not fixed to `SONAR_TOKEN`, because
+real setups often export several candidates side by side (`SONAR_TOKEN`,
+`SONAR_BOT_TOKEN`, `SONARQUBE_PERSONAL_TOKEN`, …). Discover which ones exist
+before picking one.
 
-- **List candidate variable names only — never their values:**
+- **List candidate variable names only, never their values:**
   ```bash
-  env | grep -iE '^[A-Z0-9_]*SONAR[A-Z0-9_]*TOKEN[A-Z0-9_]*=' | cut -d= -f1
+  compgen -e | LC_ALL=C sort -u | grep -iE '^[A-Z0-9_]*SONAR[A-Z0-9_]*TOKEN[A-Z0-9_]*$'
   ```
-  `cut -d= -f1` keeps only the left-hand side of each `NAME=value` line, so no
-  token value is ever displayed, printed, or logged — only labels.
+  `compgen -e` prints exported variable names without reading their values,
+  so no token can appear in the output.
 - **Exactly one candidate** → use it, referring to it as `$SONAR_TOKEN` in the
   rest of this doc regardless of its actual name (every command below is
   written against that placeholder — substitute the real name you resolved).
@@ -49,15 +48,20 @@ one.
   explicitly targets a project/org that only one candidate's name plausibly
   maps to). When genuinely in doubt, ask — silently picking one risks acting
   under the wrong identity or permission set.
-- This workflow **never** reads the token from a file — not `.env`,
-  `.env.local`, CI variable files, IDE settings, or any file inside a repo —
-  and never prompts for it over stdin during the API-driven workflow. It is
-  expected to already be exported, globally, before the session starts.
+- This workflow **never** reads the token from a file (`.env`,
+  `.env.local`, CI variable files, IDE settings, shell profiles, or anything
+  inside a repo) and never prompts for it. The variable must already be
+  exported in the environment the agent runs in.
 - **Never print, log, echo, decode, or summarize the token.** Never put it in
   a URL query string (`curl -v`/`--trace` dumps headers — avoid those flags on
-  authenticated calls too). Send it only in an `Authorization: Bearer
-  $SONAR_TOKEN` header. Never copy it into a file, commit, test fixture, or
-  message to the user.
+  authenticated calls too). Send it only in an `Authorization: Bearer`
+  header, and never place it directly on a command line, because command
+  arguments are visible to other processes. Every example below passes it
+  as `-H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN")`: `printf`
+  is a Bash builtin, so the value only travels through a pipe and curl's
+  argument list shows `@/dev/fd/N`. A process substitution can be read once,
+  so give each `curl` call its own. Never copy the token into a file,
+  commit, test fixture, or message to the user.
 - **If no candidate variable is set, stop.** Do not call the API, do not fall
   back to an unauthenticated request, and do not guess a token. Give the user
   this setup procedure and end the workflow:
@@ -66,17 +70,20 @@ one.
      Tokens** → choose **User Token**. The account needs **Browse** and
      **Administer Issues** permission on the target project (and on every
      other project this same global token will be used for).
-  2. Export it in the shell profile so every session already has it, under
-     any SonarQube-token-shaped name (`SONAR_TOKEN` by default, or a more
-     specific name if the user already has a naming convention):
+  2. Export it in the shell that starts the agent session, under any
+     SonarQube-token-shaped name (`SONAR_TOKEN` by default, or a more
+     specific name if the user already has a naming convention). Reading it
+     without echo keeps it out of shell history:
      ```bash
-     export SONAR_TOKEN="…"
+     read -r -s -p 'SonarQube token: ' SONAR_TOKEN; printf '\n'; export SONAR_TOKEN
      ```
-     Then open a new terminal (or `source` the profile) so it takes effect.
-  3. Never put it in a project file — a global shell variable is the only
-     place this workflow looks.
+     To make it available in every session, load it from a secret manager
+     when the shell starts rather than writing the token itself into a
+     plaintext profile such as `~/.bashrc`.
+  3. Never put it in a project file. The environment is the only place this
+     workflow looks.
 
-  Re-run the workflow once the variable is set and the shell has reloaded.
+  Re-run the workflow in a session where the variable is exported.
 
 The one place a token is entered interactively is the **standalone scanner
 runner** ([3. Produce a fresh analysis](#3-produce-a-fresh-analysis)), which
@@ -123,8 +130,7 @@ Skip this step if the server already has an analysis current with the working
 tree. Check concretely rather than assuming:
 
 ```bash
-AUTH=(-H "Authorization: Bearer $SONAR_TOKEN")
-LAST_REVISION="$(curl -sS "${AUTH[@]}" \
+LAST_REVISION="$(curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/project_analyses/search?project=$SONAR_PROJECT_KEY&ps=1" \
   | jq -r '.analyses[0].revision // empty')"
 git rev-parse HEAD
@@ -198,15 +204,13 @@ entirely on New Code, so a passing gate says nothing about Overall Code. Read
 the Overall Code measures directly.
 
 ```bash
-AUTH=(-H "Authorization: Bearer $SONAR_TOKEN")
-
 # Overall Code measures
-curl -sS "${AUTH[@]}" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=violations,coverage,uncovered_lines,duplicated_lines_density,duplicated_blocks,ncloc" \
   | jq '.component.measures'
 
 # Open issues (no inNewCodePeriod filter — Overall Code)
-curl -sS "${AUTH[@]}" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/search?components=$SONAR_PROJECT_KEY&resolved=false&ps=500" \
   | jq '.issues[] | {key, rule, severity, component, line, message}'
 ```
