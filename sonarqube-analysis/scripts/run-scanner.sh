@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 #
-# Standalone, interactive SonarScanner launcher.
+# Standalone, interactive SonarScanner launcher for a person at a terminal.
+#
+# This is a convenience for manual runs. An agent following SKILL.md runs the
+# docker command directly with the token already exported and never relies on
+# the prompts below. Without a terminal on stdin the script never prompts: it
+# falls back to the default host URL and exits if SONAR_TOKEN is not set.
 #
 # Resolves the SonarQube server URL and auth token from the SONAR_HOST_URL and
 # SONAR_TOKEN environment variables. When either is missing, it prompts for

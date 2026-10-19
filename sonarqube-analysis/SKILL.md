@@ -85,9 +85,10 @@ before picking one.
 
   Re-run the workflow in a session where the variable is exported.
 
-The one place a token is entered interactively is the **standalone scanner
-runner** ([3. Produce a fresh analysis](#3-produce-a-fresh-analysis)), which
-hides the keystrokes rather than reading it from a file.
+The only interactive token prompt is in the standalone scanner runner
+described in [3. Produce a fresh analysis](#3-produce-a-fresh-analysis). That
+script is meant for a person at a terminal, and the agent workflow never
+relies on it.
 
 ## 2. Identify the project
 
@@ -193,17 +194,17 @@ Otherwise:
    scanner writes into the bind mount (`.scannerwork/`) owned by the calling
    user, not root.
 
-   `scripts/run-scanner.sh` wraps this exact command as a
-   standalone, interactive runner: it prompts for `SONAR_HOST_URL` with
-   **blank input defaulting to `http://localhost:9000`** (press Enter to
-   accept) and for `SONAR_TOKEN` with hidden input when neither is already
-   exported, so an occasional manual run needs no prior `export`. Point the
-   user at it (`bash <path-to-skill>/scripts/run-scanner.sh`, or copy it into
-   the project as `scripts/sonar.sh`) when they want a repeatable local
-   command instead of asking Claude to run the scan each time; when acting
-   autonomously through this skill, run the `docker run` command directly with
-   `$SONAR_TOKEN`/`$SONAR_HOST_URL` already resolved from the environment per
-   step 1, so nothing prompts mid-task.
+   `scripts/run-scanner.sh` wraps this exact command for people who want a
+   repeatable local scan without asking an agent each time. Point the user at
+   it (`bash <path-to-skill>/scripts/run-scanner.sh`, or copy it into the
+   project as `scripts/sonar.sh`). When run from a terminal, it prompts for
+   any value that isn't exported: `SONAR_HOST_URL`, where blank input means
+   `http://localhost:9000`, and `SONAR_TOKEN`, with hidden input. Without a
+   terminal it never prompts and exits if `SONAR_TOKEN` is missing.
+
+   When you run the scan as the agent, do not use the script. Run the
+   `docker run` command above directly, with the token and host already
+   resolved from the environment in step 1, so nothing can prompt mid-task.
 
 3. Confirm the scanner logs `EXECUTION SUCCESS` before moving on to the API
    steps — a failed scan leaves stale data on the server that step 4 would
@@ -271,6 +272,7 @@ The short version (full detail in `references/remediation-workflow.md`):
 - `references/scanner-config.md` — writing or extending
   `sonar-project.properties` for a given language/stack, and the
   brace-glob-splits-on-commas pitfall.
-- `scripts/run-scanner.sh` — standalone interactive runner: prompts for
-  `SONAR_HOST_URL` (blank → `http://localhost:9000`) and hidden `SONAR_TOKEN`
-  when unset, then runs the Docker scanner command from step 3.
+- `scripts/run-scanner.sh` — standalone runner for people at a terminal:
+  prompts for `SONAR_HOST_URL` (blank → `http://localhost:9000`) and hidden
+  `SONAR_TOKEN` when unset, then runs the Docker scanner command from step 3.
+  Not used by the agent workflow.
