@@ -21,9 +21,11 @@
 # host.docker.internal instead and drop --network host.
 #
 # Security: the token is never echoed to the terminal and is handed to the
-# scanner through its child-process environment via `docker run -e VAR`
-# (no `=value`), which forwards the value from the calling environment
-# without ever placing it in argv or `docker inspect` output.
+# scanner through the docker process's environment via `docker run -e VAR`
+# (no `=value`), so it never appears in the docker command's arguments.
+# Docker still stores it in the container's environment, where anyone with
+# access to the Docker daemon can read it through `docker inspect` until
+# --rm removes the container. Use a Docker host you trust with the token.
 #
 # Usage: bash run-scanner.sh   (run from the project root)
 

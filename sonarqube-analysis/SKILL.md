@@ -160,15 +160,31 @@ Otherwise:
      sonarsource/sonar-scanner-cli
    ```
 
-   `-e SONAR_HOST_URL` / `-e SONAR_TOKEN` (no `=value`) forward the values
-   from the **calling shell's** environment into the container without ever
-   placing them in argv or `docker inspect` output. If the variable resolved
-   in step 1 has a different name (e.g. `SONAR_BOT_TOKEN`), export it under
-   the name the scanner expects **before** the `docker run` call —
-   `export SONAR_TOKEN="$SONAR_BOT_TOKEN"` — then keep using the bare
-   `-e SONAR_TOKEN` form shown above; putting `-e SONAR_TOKEN="$SONAR_BOT_TOKEN"`
-   directly on the `docker run` command line would work too but exposes the
-   value in argv/`docker inspect`, which the bare form exists to avoid.
+   `-e SONAR_HOST_URL` / `-e SONAR_TOKEN` (no `=value`) copy the values from
+   the **calling shell's** environment, so the token never appears in the
+   `docker` command's own arguments. Docker still stores it in the
+   container's environment, which anyone with access to the Docker daemon can
+   read through `docker inspect` until `--rm` removes the container. Run the
+   scan only on a Docker host whose daemon access you already trust with the
+   token.
+
+   If the variable resolved in step 1 has a different name (e.g.
+   `SONAR_BOT_TOKEN`), set the name the scanner expects for this one command
+   only, rather than exporting it into the session:
+
+   ```bash
+   SONAR_TOKEN="$SONAR_BOT_TOKEN" docker run --rm --network host \
+     -e SONAR_HOST_URL -e SONAR_TOKEN \
+     -v "$(pwd):/usr/src" \
+     --user "$(id -u):$(id -g)" \
+     sonarsource/sonar-scanner-cli
+   ```
+
+   The prefix assignment is expanded by the shell into the `docker`
+   process's environment, not its arguments. Never write
+   `-e SONAR_TOKEN="$SONAR_BOT_TOKEN"`, which puts the value in the argument
+   list.
+
    `--network host` is
    Linux-only and is what lets a `localhost:9000` server on the host be
    reachable from inside the container; it does not work under Docker Desktop
