@@ -1,6 +1,7 @@
 ---
 name: github-api
 description: Read or change GitHub repository resources through the GitHub REST or GraphQL API, including issues, pull requests, contents, releases, checks, and Actions on GitHub.com or GitHub Enterprise Server. Use for resource operations such as listing PR files, approving a PR, creating an issue or PR, or running a workflow. For evidence-based code-quality review or merge-readiness assessment, use pr-review.
+compatibility: Requires Bash, curl, jq, base64, and HTTPS access to the target GitHub host. Credentials come only from an exported environment variable.
 ---
 
 # GitHub API operations

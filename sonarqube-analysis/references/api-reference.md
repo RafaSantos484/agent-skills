@@ -1,7 +1,10 @@
 # SonarQube Web API Reference
 
 Endpoint catalog for the calls this skill makes. All calls authenticate with
-`Authorization: Bearer $SONAR_TOKEN` — a placeholder for whichever environment
+an `Authorization: Bearer` header passed as
+`-H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN")`, which keeps the
+token out of curl's argument list (see `SKILL.md` → "1. Authentication").
+`$SONAR_TOKEN` is a placeholder for whichever environment
 variable name was resolved per `SKILL.md` → "1. Authentication" (candidate
 discovery, ask-if-ambiguous); substitute the real variable name in every
 command below. `$SONAR_URL` is the resolved host (`SONAR_HOST_URL` or
@@ -13,7 +16,7 @@ API surface differs slightly across SonarQube versions.
 ## Measures
 
 ```bash
-curl -sS -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=violations,coverage,uncovered_lines,duplicated_lines_density,duplicated_blocks,ncloc"
 ```
 
@@ -33,7 +36,7 @@ Useful `metricKeys` (Overall Code — never the `new_` prefixed twins):
 ## Analyses (checking whether a re-scan is needed)
 
 ```bash
-curl -sS -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/project_analyses/search?project=$SONAR_PROJECT_KEY&ps=1"
 ```
 
@@ -47,7 +50,7 @@ that as "can't confirm freshness," not as "up to date."
 ## Issue search
 
 ```bash
-curl -sS -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/search?components=$SONAR_PROJECT_KEY&resolved=false&ps=500"
 ```
 
@@ -73,7 +76,7 @@ list as complete.
 ## Transitions
 
 ```bash
-curl -sS -X POST -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/do_transition" \
   --data-urlencode "issue=$ISSUE_KEY" \
   --data-urlencode "transition=<transition>"
@@ -88,7 +91,7 @@ legal.
 ## Comments
 
 ```bash
-curl -sS -X POST -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/add_comment" \
   --data-urlencode "issue=$ISSUE_KEY" \
   --data-urlencode "text=<justification>"
@@ -104,10 +107,10 @@ endpoint and their own review statuses (`TO_REVIEW`, `REVIEWED` with
 resolution `FIXED`/`SAFE`):
 
 ```bash
-curl -sS -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/hotspots/search?project=$SONAR_PROJECT_KEY&status=TO_REVIEW"
 
-curl -sS -X POST -H "Authorization: Bearer $SONAR_TOKEN" \
+curl -sS -X POST -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/hotspots/change_status" \
   --data-urlencode "hotspot=$HOTSPOT_KEY" \
   --data-urlencode "status=REVIEWED" \

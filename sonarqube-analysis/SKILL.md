@@ -1,14 +1,15 @@
 ---
-name: sonarqube
-description: Use this skill whenever the user wants Claude to run a SonarQube analysis or act on its findings for a codebase — running the scanner (coverage generation plus the SonarScanner CLI via Docker), fetching issues/coverage/duplication measures through the SonarQube Web API, triaging and fixing real issues, or transitioning false positives/accepted findings. Trigger on phrases like "run SonarQube", "fix the SonarQube issues", "check code quality with SonarQube", "improve SonarQube coverage/duplication", "set up SonarQube for this project" — even when the project has no `sonar-project.properties` yet.
+name: sonarqube-analysis
+description: Run a SonarQube analysis and act on its findings. Generates coverage, runs the SonarScanner CLI through Docker, reads Overall Code issues, coverage, and duplication through the SonarQube Web API, fixes valid issues, and transitions false positives or accepted findings with a recorded justification. Use only when the user explicitly asks for SonarQube work, such as "run SonarQube", "fix the SonarQube issues", "check code quality with SonarQube", "improve SonarQube coverage or duplication", or "set up SonarQube for this project", including projects that have no sonar-project.properties yet.
+compatibility: Requires Bash, git, curl 7.55 or later (for reading headers from a file with -H @file), jq, Docker, and network access to a SonarQube server. The documented scanner command uses --network host, which works on Linux only. Credentials come only from an exported environment variable.
 ---
 
-# SonarQube Analysis & Remediation
+# SonarQube analysis and remediation
 
-How to produce a SonarQube analysis for a codebase and act on what it reports:
-authenticating, running the scanner, reading **Overall Code** measures, and
-triaging issues into real fixes vs. transitioned false positives — for any
-project, not just one repository.
+This skill produces a SonarQube analysis for any codebase and acts on what it
+reports. It covers authentication, running the scanner, reading **Overall
+Code** measures, and sorting issues into real fixes and transitioned false
+positives.
 
 This is an **opt-in** workflow. Run it only when the user explicitly asks for
 a SonarQube run, a fix of SonarQube findings, or a quality-score improvement.
@@ -25,20 +26,19 @@ Resolve these in order before touching code or the API:
 
 ## 1. Authentication
 
-Authenticate **exclusively** through an environment variable holding a
-**User Token**, not a Project Analysis Token (analysis tokens can submit
-scans but cannot read or transition issues). The variable's exact **name** is
-not fixed to `SONAR_TOKEN`: real setups often carry several SonarQube-token-
-shaped candidates side by side (`SONAR_TOKEN`, `SONAR_BOT_TOKEN`,
-`SONARQUBE_PERSONAL_TOKEN`, …), so discover which ones exist before picking
-one.
+Authenticate **only** through an exported environment variable holding a
+**User Token**. A Project Analysis Token can submit scans but cannot read or
+transition issues. The variable's name is not fixed to `SONAR_TOKEN`, because
+real setups often export several candidates side by side (`SONAR_TOKEN`,
+`SONAR_BOT_TOKEN`, `SONARQUBE_PERSONAL_TOKEN`, …). Discover which ones exist
+before picking one.
 
-- **List candidate variable names only — never their values:**
+- **List candidate variable names only, never their values:**
   ```bash
-  env | grep -iE '^[A-Z0-9_]*SONAR[A-Z0-9_]*TOKEN[A-Z0-9_]*=' | cut -d= -f1
+  compgen -e | LC_ALL=C sort -u | grep -iE '^[A-Z0-9_]*SONAR[A-Z0-9_]*TOKEN[A-Z0-9_]*$'
   ```
-  `cut -d= -f1` keeps only the left-hand side of each `NAME=value` line, so no
-  token value is ever displayed, printed, or logged — only labels.
+  `compgen -e` prints exported variable names without reading their values,
+  so no token can appear in the output.
 - **Exactly one candidate** → use it, referring to it as `$SONAR_TOKEN` in the
   rest of this doc regardless of its actual name (every command below is
   written against that placeholder — substitute the real name you resolved).
@@ -49,15 +49,20 @@ one.
   explicitly targets a project/org that only one candidate's name plausibly
   maps to). When genuinely in doubt, ask — silently picking one risks acting
   under the wrong identity or permission set.
-- This workflow **never** reads the token from a file — not `.env`,
-  `.env.local`, CI variable files, IDE settings, or any file inside a repo —
-  and never prompts for it over stdin during the API-driven workflow. It is
-  expected to already be exported, globally, before the session starts.
+- This workflow **never** reads the token from a file (`.env`,
+  `.env.local`, CI variable files, IDE settings, shell profiles, or anything
+  inside a repo) and never prompts for it. The variable must already be
+  exported in the environment the agent runs in.
 - **Never print, log, echo, decode, or summarize the token.** Never put it in
   a URL query string (`curl -v`/`--trace` dumps headers — avoid those flags on
-  authenticated calls too). Send it only in an `Authorization: Bearer
-  $SONAR_TOKEN` header. Never copy it into a file, commit, test fixture, or
-  message to the user.
+  authenticated calls too). Send it only in an `Authorization: Bearer`
+  header, and never place it directly on a command line, because command
+  arguments are visible to other processes. Every example below passes it
+  as `-H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN")`: `printf`
+  is a Bash builtin, so the value only travels through a pipe and curl's
+  argument list shows `@/dev/fd/N`. A process substitution can be read once,
+  so give each `curl` call its own. Never copy the token into a file,
+  commit, test fixture, or message to the user.
 - **If no candidate variable is set, stop.** Do not call the API, do not fall
   back to an unauthenticated request, and do not guess a token. Give the user
   this setup procedure and end the workflow:
@@ -66,21 +71,25 @@ one.
      Tokens** → choose **User Token**. The account needs **Browse** and
      **Administer Issues** permission on the target project (and on every
      other project this same global token will be used for).
-  2. Export it in the shell profile so every session already has it, under
-     any SonarQube-token-shaped name (`SONAR_TOKEN` by default, or a more
-     specific name if the user already has a naming convention):
+  2. Export it in the shell that starts the agent session, under any
+     SonarQube-token-shaped name (`SONAR_TOKEN` by default, or a more
+     specific name if the user already has a naming convention). Reading it
+     without echo keeps it out of shell history:
      ```bash
-     export SONAR_TOKEN="…"
+     read -r -s -p 'SonarQube token: ' SONAR_TOKEN; printf '\n'; export SONAR_TOKEN
      ```
-     Then open a new terminal (or `source` the profile) so it takes effect.
-  3. Never put it in a project file — a global shell variable is the only
-     place this workflow looks.
+     To make it available in every session, load it from a secret manager
+     when the shell starts rather than writing the token itself into a
+     plaintext profile such as `~/.bashrc`.
+  3. Never put it in a project file. The environment is the only place this
+     workflow looks.
 
-  Re-run the workflow once the variable is set and the shell has reloaded.
+  Re-run the workflow in a session where the variable is exported.
 
-The one place a token is entered interactively is the **standalone scanner
-runner** ([3. Produce a fresh analysis](#3-produce-a-fresh-analysis)), which
-hides the keystrokes rather than reading it from a file.
+The only interactive token prompt is in the standalone scanner runner
+described in [3. Produce a fresh analysis](#3-produce-a-fresh-analysis). That
+script is meant for a person at a terminal, and the agent workflow never
+relies on it.
 
 ## 2. Identify the project
 
@@ -123,8 +132,7 @@ Skip this step if the server already has an analysis current with the working
 tree. Check concretely rather than assuming:
 
 ```bash
-AUTH=(-H "Authorization: Bearer $SONAR_TOKEN")
-LAST_REVISION="$(curl -sS "${AUTH[@]}" \
+LAST_REVISION="$(curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/project_analyses/search?project=$SONAR_PROJECT_KEY&ps=1" \
   | jq -r '.analyses[0].revision // empty')"
 git rev-parse HEAD
@@ -154,15 +162,31 @@ Otherwise:
      sonarsource/sonar-scanner-cli
    ```
 
-   `-e SONAR_HOST_URL` / `-e SONAR_TOKEN` (no `=value`) forward the values
-   from the **calling shell's** environment into the container without ever
-   placing them in argv or `docker inspect` output. If the variable resolved
-   in step 1 has a different name (e.g. `SONAR_BOT_TOKEN`), export it under
-   the name the scanner expects **before** the `docker run` call —
-   `export SONAR_TOKEN="$SONAR_BOT_TOKEN"` — then keep using the bare
-   `-e SONAR_TOKEN` form shown above; putting `-e SONAR_TOKEN="$SONAR_BOT_TOKEN"`
-   directly on the `docker run` command line would work too but exposes the
-   value in argv/`docker inspect`, which the bare form exists to avoid.
+   `-e SONAR_HOST_URL` / `-e SONAR_TOKEN` (no `=value`) copy the values from
+   the **calling shell's** environment, so the token never appears in the
+   `docker` command's own arguments. Docker still stores it in the
+   container's environment, which anyone with access to the Docker daemon can
+   read through `docker inspect` until `--rm` removes the container. Run the
+   scan only on a Docker host whose daemon access you already trust with the
+   token.
+
+   If the variable resolved in step 1 has a different name (e.g.
+   `SONAR_BOT_TOKEN`), set the name the scanner expects for this one command
+   only, rather than exporting it into the session:
+
+   ```bash
+   SONAR_TOKEN="$SONAR_BOT_TOKEN" docker run --rm --network host \
+     -e SONAR_HOST_URL -e SONAR_TOKEN \
+     -v "$(pwd):/usr/src" \
+     --user "$(id -u):$(id -g)" \
+     sonarsource/sonar-scanner-cli
+   ```
+
+   The prefix assignment is expanded by the shell into the `docker`
+   process's environment, not its arguments. Never write
+   `-e SONAR_TOKEN="$SONAR_BOT_TOKEN"`, which puts the value in the argument
+   list.
+
    `--network host` is
    Linux-only and is what lets a `localhost:9000` server on the host be
    reachable from inside the container; it does not work under Docker Desktop
@@ -171,17 +195,17 @@ Otherwise:
    scanner writes into the bind mount (`.scannerwork/`) owned by the calling
    user, not root.
 
-   `scripts/run-scanner.sh` wraps this exact command as a
-   standalone, interactive runner: it prompts for `SONAR_HOST_URL` with
-   **blank input defaulting to `http://localhost:9000`** (press Enter to
-   accept) and for `SONAR_TOKEN` with hidden input when neither is already
-   exported, so an occasional manual run needs no prior `export`. Point the
-   user at it (`bash <path-to-skill>/scripts/run-scanner.sh`, or copy it into
-   the project as `scripts/sonar.sh`) when they want a repeatable local
-   command instead of asking Claude to run the scan each time; when acting
-   autonomously through this skill, run the `docker run` command directly with
-   `$SONAR_TOKEN`/`$SONAR_HOST_URL` already resolved from the environment per
-   step 1, so nothing prompts mid-task.
+   `scripts/run-scanner.sh` wraps this exact command for people who want a
+   repeatable local scan without asking an agent each time. Point the user at
+   it (`bash <path-to-skill>/scripts/run-scanner.sh`, or copy it into the
+   project as `scripts/sonar.sh`). When run from a terminal, it prompts for
+   any value that isn't exported: `SONAR_HOST_URL`, where blank input means
+   `http://localhost:9000`, and `SONAR_TOKEN`, with hidden input. Without a
+   terminal it never prompts and exits if `SONAR_TOKEN` is missing.
+
+   When you run the scan as the agent, do not use the script. Run the
+   `docker run` command above directly, with the token and host already
+   resolved from the environment in step 1, so nothing can prompt mid-task.
 
 3. Confirm the scanner logs `EXECUTION SUCCESS` before moving on to the API
    steps — a failed scan leaves stale data on the server that step 4 would
@@ -198,15 +222,13 @@ entirely on New Code, so a passing gate says nothing about Overall Code. Read
 the Overall Code measures directly.
 
 ```bash
-AUTH=(-H "Authorization: Bearer $SONAR_TOKEN")
-
 # Overall Code measures
-curl -sS "${AUTH[@]}" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/measures/component?component=$SONAR_PROJECT_KEY&metricKeys=violations,coverage,uncovered_lines,duplicated_lines_density,duplicated_blocks,ncloc" \
   | jq '.component.measures'
 
 # Open issues (no inNewCodePeriod filter — Overall Code)
-curl -sS "${AUTH[@]}" \
+curl -sS -H @<(printf 'Authorization: Bearer %s\n' "$SONAR_TOKEN") \
   "$SONAR_URL/api/issues/search?components=$SONAR_PROJECT_KEY&resolved=false&ps=500" \
   | jq '.issues[] | {key, rule, severity, component, line, message}'
 ```
@@ -225,9 +247,10 @@ transition an issue and the API calls for `do_transition`/`add_comment`, is in
 
 The short version (full detail in `references/remediation-workflow.md`):
 
-- **Valid issue → fix the code**, following the project's own standards (its
-  `AGENTS.md`/`CLAUDE.md`/`CONTRIBUTING.md`/style guide if one exists — read
-  it before editing). A SonarQube finding never justifies a shortcut, a
+- **Valid issue → fix the code**, following the project's own standards.
+  Read its agent instruction files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`,
+  `.github/copilot-instructions.md`, or similar), `CONTRIBUTING.md`, and
+  style guide, whichever exist, before editing. A SonarQube finding never justifies a shortcut, a
   suppression comment, or a cross-cutting refactor the user did not ask for.
   Update the project's own tests and docs alongside the fix, as its
   conventions require.
@@ -251,6 +274,7 @@ The short version (full detail in `references/remediation-workflow.md`):
 - `references/scanner-config.md` — writing or extending
   `sonar-project.properties` for a given language/stack, and the
   brace-glob-splits-on-commas pitfall.
-- `scripts/run-scanner.sh` — standalone interactive runner: prompts for
-  `SONAR_HOST_URL` (blank → `http://localhost:9000`) and hidden `SONAR_TOKEN`
-  when unset, then runs the Docker scanner command from step 3.
+- `scripts/run-scanner.sh` — standalone runner for people at a terminal:
+  prompts for `SONAR_HOST_URL` (blank → `http://localhost:9000`) and hidden
+  `SONAR_TOKEN` when unset, then runs the Docker scanner command from step 3.
+  Not used by the agent workflow.

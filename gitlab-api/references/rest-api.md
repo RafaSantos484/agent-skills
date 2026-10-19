@@ -3,7 +3,7 @@
 Base URL: `https://<host>/api/v4` (prefix with the relative URL root if the instance uses one, e.g. `https://intranet.example.com/gitlab/api/v4`)
 Full docs: https://docs.gitlab.com/api/rest/ — browse per-resource pages from there, e.g. `.../api/issues/`, `.../api/merge_requests/`
 
-Auth header: `PRIVATE-TOKEN: $GITLAB_TOKEN` (or `Authorization: Bearer $GITLAB_TOKEN` — both are supported). `$GITLAB_TOKEN` here is a placeholder for whichever environment variable name was resolved per `SKILL.md` → "1. Authentication" (candidate discovery, ask-if-ambiguous) — substitute the real variable name in every command below.
+Auth header: `PRIVATE-TOKEN: <token>` (or `Authorization: Bearer <token>` — both are supported), always supplied as `--header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN")` so the value stays out of curl's argument list (see `SKILL.md` → "1. Authentication"). `$GITLAB_TOKEN` here is a placeholder for whichever environment variable name was resolved per `SKILL.md` → "1. Authentication" (candidate discovery, ask-if-ambiguous) — substitute the real variable name in every command below.
 
 Always pass `--fail-with-body` to curl so 4xx/5xx responses don't get mistaken for results.
 
@@ -11,10 +11,10 @@ Always pass `--fail-with-body` to curl so 4xx/5xx responses don't get mistaken f
 
 ```bash
 # Who am I? Confirms host + token in one call.
-curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://<host>/api/v4/user"
+curl -sf --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") "https://<host>/api/v4/user"
 
 # Instance version — matters when a feature is version-gated.
-curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://<host>/api/v4/version"
+curl -sf --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") "https://<host>/api/v4/version"
 ```
 
 ## Identifying projects and groups
@@ -27,7 +27,7 @@ Most endpoints take `:id` as either:
 Look up a project by path when you don't have the numeric ID:
 
 ```bash
-curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      "https://<host>/api/v4/projects/<group%2Fproject>"
 ```
 
@@ -49,7 +49,7 @@ Common list filters: `state=opened|closed`, `labels=`, `assignee_username=`, `au
 
 ```bash
 curl -s --fail-with-body --request POST \
-     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+     --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      --data-urlencode "title=Something is broken" \
      --data "assignee_ids[]=42" \
      --data "labels=bug,needs-triage" \
@@ -124,7 +124,7 @@ Access levels: 10 Guest, 20 Reporter, 30 Developer, 40 Maintainer, 50 Owner.
 Resolve a username to a numeric user ID (needed for `assignee_ids`, `reviewer_ids`, etc):
 
 ```bash
-curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      "https://<host>/api/v4/users?username=<username>"
 ```
 
@@ -142,7 +142,7 @@ Returns an array — empty means no such user, or the token can't see them. Don'
 Project-scoped search across issues, MRs, commits, code:
 
 ```bash
-curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      "https://<host>/api/v4/projects/:id/search?scope=issues&search=<query>"
 ```
 
@@ -153,7 +153,7 @@ Also available instance-wide at `/search` and group-scoped at `/groups/:id/searc
 **Offset-based** (default): `page` and `per_page` — default 20, **max 100**.
 
 ```bash
-curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      "https://<host>/api/v4/projects/:id/issues?page=2&per_page=100"
 ```
 

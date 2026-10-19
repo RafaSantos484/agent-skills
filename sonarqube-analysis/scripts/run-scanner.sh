@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 #
-# Standalone, interactive SonarScanner launcher.
+# Standalone, interactive SonarScanner launcher for a person at a terminal.
+#
+# This is a convenience for manual runs. An agent following SKILL.md runs the
+# docker command directly with the token already exported and never relies on
+# the prompts below. Without a terminal on stdin the script never prompts: it
+# falls back to the default host URL and exits if SONAR_TOKEN is not set.
 #
 # Resolves the SonarQube server URL and auth token from the SONAR_HOST_URL and
 # SONAR_TOKEN environment variables. When either is missing, it prompts for
@@ -21,9 +26,11 @@
 # host.docker.internal instead and drop --network host.
 #
 # Security: the token is never echoed to the terminal and is handed to the
-# scanner through its child-process environment via `docker run -e VAR`
-# (no `=value`), which forwards the value from the calling environment
-# without ever placing it in argv or `docker inspect` output.
+# scanner through the docker process's environment via `docker run -e VAR`
+# (no `=value`), so it never appears in the docker command's arguments.
+# Docker still stores it in the container's environment, where anyone with
+# access to the Docker daemon can read it through `docker inspect` until
+# --rm removes the container. Use a Docker host you trust with the token.
 #
 # Usage: bash run-scanner.sh   (run from the project root)
 
