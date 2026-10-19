@@ -1,14 +1,15 @@
 ---
 name: sonarqube-analysis
-description: Use this skill whenever the user wants Claude to run a SonarQube analysis or act on its findings for a codebase — running the scanner (coverage generation plus the SonarScanner CLI via Docker), fetching issues/coverage/duplication measures through the SonarQube Web API, triaging and fixing real issues, or transitioning false positives/accepted findings. Trigger on phrases like "run SonarQube", "fix the SonarQube issues", "check code quality with SonarQube", "improve SonarQube coverage/duplication", "set up SonarQube for this project" — even when the project has no `sonar-project.properties` yet.
+description: Run a SonarQube analysis and act on its findings. Generates coverage, runs the SonarScanner CLI through Docker, reads Overall Code issues, coverage, and duplication through the SonarQube Web API, fixes valid issues, and transitions false positives or accepted findings with a recorded justification. Use only when the user explicitly asks for SonarQube work, such as "run SonarQube", "fix the SonarQube issues", "check code quality with SonarQube", "improve SonarQube coverage or duplication", or "set up SonarQube for this project", including projects that have no sonar-project.properties yet.
+compatibility: Requires Bash, git, curl 7.55 or later (for reading headers from a file with -H @file), jq, Docker, and network access to a SonarQube server. The documented scanner command uses --network host, which works on Linux only. Credentials come only from an exported environment variable.
 ---
 
-# SonarQube Analysis & Remediation
+# SonarQube analysis and remediation
 
-How to produce a SonarQube analysis for a codebase and act on what it reports:
-authenticating, running the scanner, reading **Overall Code** measures, and
-triaging issues into real fixes vs. transitioned false positives — for any
-project, not just one repository.
+This skill produces a SonarQube analysis for any codebase and acts on what it
+reports. It covers authentication, running the scanner, reading **Overall
+Code** measures, and sorting issues into real fixes and transitioned false
+positives.
 
 This is an **opt-in** workflow. Run it only when the user explicitly asks for
 a SonarQube run, a fix of SonarQube findings, or a quality-score improvement.
@@ -246,9 +247,10 @@ transition an issue and the API calls for `do_transition`/`add_comment`, is in
 
 The short version (full detail in `references/remediation-workflow.md`):
 
-- **Valid issue → fix the code**, following the project's own standards (its
-  `AGENTS.md`/`CLAUDE.md`/`CONTRIBUTING.md`/style guide if one exists — read
-  it before editing). A SonarQube finding never justifies a shortcut, a
+- **Valid issue → fix the code**, following the project's own standards.
+  Read its agent instruction files (`AGENTS.md`, `CLAUDE.md`, `GEMINI.md`,
+  `.github/copilot-instructions.md`, or similar), `CONTRIBUTING.md`, and
+  style guide, whichever exist, before editing. A SonarQube finding never justifies a shortcut, a
   suppression comment, or a cross-cutting refactor the user did not ask for.
   Update the project's own tests and docs alongside the fix, as its
   conventions require.

@@ -1,13 +1,14 @@
 ---
 name: gitlab-api
-description: Use this skill whenever the user wants Claude to interact with GitLab (gitlab.com or a self-hosted instance) programmatically — creating or updating issues, merge requests, branches, pipelines, labels, milestones, epics/work items, members, or any other GitLab resource, whether through the REST API or the GraphQL API. Trigger this any time a GitLab project is involved and the user wants an action performed or data read from it (e.g. "create an issue and assign it to X", "list open merge requests", "trigger a pipeline", "check who's assigned to this epic"), even if the user doesn't say "API" explicitly.
+description: Read or change GitLab resources on gitlab.com or a self-hosted instance through the REST or GraphQL API, including issues, merge requests, branches, pipelines, labels, milestones, epics and work items, members, and vulnerabilities. Use whenever a task involves reading data from or performing an action in a GitLab project, such as creating and assigning an issue, listing open merge requests, triggering a pipeline, or checking who is assigned to an epic, even if the request does not mention the API.
+compatibility: Requires Bash, curl 7.76 or later (for --fail-with-body and reading headers from a file with -H @file), jq, and network access to the target GitLab host. Credentials come only from an exported environment variable.
 ---
 
 # GitLab API Operations
 
-How to operate against GitLab's REST and GraphQL APIs: authenticating, identifying which GitLab instance you're talking to, and picking the right API for a given task.
+This skill covers authenticating to GitLab's REST and GraphQL APIs, identifying the right GitLab instance, and choosing the API that fits each task.
 
-Official docs — fetch these directly whenever you need exact parameters, response shapes, or anything not covered here:
+Fetch the official docs directly when you need exact parameters, response shapes, or anything not covered here:
 
 - REST reference: https://docs.gitlab.com/api/rest/
 - GraphQL reference: https://docs.gitlab.com/api/graphql/
