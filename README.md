@@ -1,84 +1,111 @@
-# Claude Code Skills
+# Agent Skills
 
-A small collection of custom [Claude Code](https://docs.claude.com/en/docs/claude-code) skills — reusable instruction sets that Claude loads automatically when a task matches, so it follows a consistent, battle-tested procedure instead of improvising each time.
+Reusable skills for AI coding agents. Each skill is a self-contained folder of Markdown instructions, reference material, and, where useful, helper scripts that walk an agent through a recurring task: talking to the GitHub or GitLab API, running and acting on a SonarQube analysis, or reviewing a change against a repository's own conventions.
 
-## What's here
+The skills follow the [Agent Skills specification](https://agentskills.io/specification), so a client that implements it can load them as they are. The instructions themselves are plain Markdown and shell, and any agent that can read files and run commands can follow them once you point it at the right `SKILL.md`.
 
-| Skill | What it does |
+## Included skills
+
+| Skill | Purpose |
 |---|---|
-| [`gitlab-api`](gitlab-api/) | Drives GitLab's REST and GraphQL APIs — issues, merge requests, branches, pipelines, labels, epics/work items, members. Authenticates only via an environment variable holding a GitLab token (never from files or CLI config) — see [Environment variable resolution](#environment-variable-resolution) below for how it's chosen among several possible candidates — auto-detects the GitLab host from context instead of assuming `gitlab.com`, and knows when to prefer GraphQL over REST (e.g. epics, vulnerabilities — resources where REST is deprecated or incomplete). |
-| [`github-api`](github-api/) | Reads and changes GitHub repository resources through direct REST and GraphQL requests on GitHub.com or a version-checked Enterprise Server. Uses only a selected environment token; covers repository contents, issues, pull requests, releases, checks, and Actions with explicit safeguards for sensitive writes. Use `pr-review` for evidence-based code review; use `github-api` for GitHub resource operations such as listing PR files or posting an authorized review. |
-| [`pr-review`](pr-review/) | Turns Claude into a rigorous, evidence-only code reviewer against a live git repository — reads the repo's own conventions first (`CLAUDE.md`, linter config, etc.), verifies claims by actually running tests/lint instead of guessing, and outputs a structured review with severity-tagged findings. |
-| [`sonarqube-analysis`](sonarqube-analysis/) | Runs a SonarQube analysis (coverage generation plus the SonarScanner CLI via Docker) and triages what it reports — issues, coverage, duplication — via the Web API. Authenticates only via an environment variable holding a SonarQube user token — see [Environment variable resolution](#environment-variable-resolution) below — judges the codebase exclusively on Overall Code metrics (never the New Code period or the quality-gate endpoint), and either fixes a valid finding in code or transitions a false positive/accepted one with a recorded justification — never both. Opt-in only: it runs when explicitly asked, not as a side effect of other work. |
+| [`github-api`](github-api/) | Reads and changes GitHub resources through direct REST and GraphQL requests on GitHub.com, Enterprise Cloud with data residency, or a version-checked Enterprise Server. Covers repository contents, issues, pull requests, releases, checks, and Actions, with extra safeguards for elevated writes. |
+| [`gitlab-api`](gitlab-api/) | Reads and changes GitLab resources on gitlab.com or a self-hosted instance. Detects the host from context instead of assuming gitlab.com, and knows when GraphQL is the only complete option, as with epics, work items, and vulnerabilities. |
+| [`pr-review`](pr-review/) | Reviews a pull request, branch, or working-tree diff against the repository's own conventions. Findings must cite a file, line, or command output, and the agent runs tests or linters where it can instead of guessing. |
+| [`sonarqube-analysis`](sonarqube-analysis/) | Runs a SonarQube scan through Docker, reads Overall Code issues, coverage, and duplication through the Web API, then either fixes each valid finding or transitions it with a recorded justification. Runs only when explicitly requested. |
+
+`github-api` handles GitHub resource operations, while `pr-review` handles judgment about code. When a request needs both, such as "review this PR and post the result", the review comes first and the write happens through `github-api` only after it is authorized.
+
+## Compatibility model
+
+Agents differ in how they discover, trigger, and sandbox skills. This repository separates what carries over unchanged from what you may need to adapt.
+
+**Portable across agents**
+
+- The Markdown instructions in each `SKILL.md`, including the step order, safety rules, and output formats.
+- Everything under `references/`, which `SKILL.md` links with relative paths.
+- Standalone scripts under `scripts/`. They are ordinary Bash and do not depend on any agent.
+- The conventions for credential handling, write confirmation, pagination, and response validation.
+
+**May need adaptation**
+
+- **Location.** Each client looks for skills in its own directories, and some have no skill directory at all.
+- **Frontmatter.** Every skill uses the spec's `name` and `description`, plus `compatibility` to state environment requirements. Clients that do not read YAML frontmatter will simply see it as text at the top of the file.
+- **Automatic triggering.** Clients that support skills usually match the request against `description`. Others need you to reference the skill explicitly.
+- **Tool permissions.** No skill here declares `allowed-tools`. The spec marks that field experimental, and the syntax for pre-approving commands differs between clients. Grant permissions in your client's own configuration if you want fewer prompts.
+- **Shell and tooling.** The commands assume Bash with `curl` and `jq`. Each skill's `compatibility` field lists anything else it needs, such as Docker or `git`.
 
 ## Installation
 
-Claude Code loads skills from `~/.claude/skills/` (global, all projects) or `.claude/skills/` inside a specific repo (project-scoped).
+A skill is installed by making its folder visible to your agent. Copy or symlink the folder whole, because `SKILL.md` refers to its `references/` and `scripts/` by relative path.
 
 ```bash
-git clone <this-repo-url> /tmp/claude-skills
-cp -r /tmp/claude-skills/<skill-name> ~/.claude/skills/
+git clone https://github.com/RafaSantos484/claude-code-skills.git ~/src/agent-skills
 ```
 
-Or clone straight into place:
+Then follow whichever case applies to your agent.
+
+**Clients that implement the Agent Skills format.** Copy or symlink the folder into the skills directory your client documents:
 
 ```bash
-git clone <this-repo-url> ~/.claude/skills-shared
-ln -s ~/.claude/skills-shared/<skill-name> ~/.claude/skills/<skill-name>
+ln -s ~/src/agent-skills/<skill-name> <your-client-skills-dir>/<skill-name>
 ```
 
-Claude picks up a skill automatically once its folder is in a recognized skills directory — no restart or registration step needed. Each skill's `SKILL.md` frontmatter (`description:`) is what Claude matches against your request to decide when to trigger it.
+The folder name must stay identical to the `name` field in its `SKILL.md`.
 
-## Environment variable resolution
+**Example: Claude Code.** User-level skills live in `~/.claude/skills/` and project-level skills in `.claude/skills/` at the repository root. A skill becomes available once its folder is in either location.
 
-Several skills here (`gitlab-api`, `github-api`, `sonarqube-analysis`) authenticate exclusively
-through an environment variable holding a secret token, and refuse to read
-that secret from any file, CLI config, or keychain. But the variable's exact
-**name** is deliberately not hardcoded to one value (`GITLAB_TOKEN`,
-`SONAR_TOKEN`, …), because real environments commonly export more than one
-plausible candidate side by side — for example `GITLAB_TOKEN`,
-`GITLAB_BOT_TOKEN`, `GITLAB_PERSONAL_TOKEN`, `GITLAB_ANPD_PERSONAL_TOKEN`,
-`GITHUB_TOKEN`, `GH_TOKEN`, `GH_ENTERPRISE_TOKEN`, `GITHUB_BOT_TOKEN`, or
-`SONAR_TOKEN`, `SONAR_BOT_TOKEN`, `SONARQUBE_PERSONAL_TOKEN` — each scoped to
-a different identity, project, or permission level. Silently picking one
-would risk acting under the wrong identity.
+```bash
+mkdir -p ~/.claude/skills
+ln -s ~/src/agent-skills/<skill-name> ~/.claude/skills/<skill-name>
+```
 
-Every skill that depends on a token-shaped environment variable follows the
-same resolution procedure:
+Claude Code also accepts an `allowed-tools` frontmatter field that pre-approves commands for a skill. It is left out here on purpose. If you want it for `pr-review`, add it to your local copy using Claude Code's syntax, for example `allowed-tools: Bash(git diff *), Bash(git log *), Read, Grep, Glob`.
 
-1. **Enumerate candidate variable names only, never their values** — in Bash,
-   `compgen -e` lists exported names without ever reading values. Filter those
-   names with the relevant skill's documented pattern. If using an `env`-based
-   approach instead, strip values before displaying or inspecting output.
-2. **Exactly one candidate** → use it, no confirmation needed.
-3. **Zero candidates** → treat auth as missing and follow the skill's normal
-   "not configured" path (usually: stop and hand the user setup steps).
-4. **More than one candidate** → don't guess. Ask the user which variable to
-   use, unless the conversation already disambiguates it unambiguously (the
-   user already named one, or the task only maps to one candidate). This is
-   the one case worth pausing for: several correctly-formed tokens can all
-   "work" while pointing at different accounts, projects, or scopes, and
-   picking the wrong one silently is worse than a single clarifying question.
+**Agents without native skill support.** Keep the folder somewhere the agent can read, and tell it to follow the skill when the task comes up. You can do that in your prompt or in a repository instruction file such as `AGENTS.md`, for example: "For GitLab tasks, follow `tools/agent-skills/gitlab-api/SKILL.md`." The agent then reads the references and scripts from the same folder as needed. Triggering is manual in this mode.
 
-This procedure is a project-wide convention, not something specific to
-GitLab or SonarQube — any new skill added here that authenticates via a
-secret environment variable should follow the same three-way logic (single
-candidate → use it, none → stop and explain, multiple → ask) rather than
-hardcoding one variable name and failing when the user's environment uses a
-different one.
+The Claude Code example is the setup this repository is maintained in. The other two describe the general approach and have not been tested against specific clients. None of this implies official support from any vendor, so check your agent's documentation for its current skill locations.
 
-## Structure
+## Credential handling
 
-Each skill is a folder containing:
+`github-api`, `gitlab-api`, and `sonarqube-analysis` authenticate only through an exported environment variable. They never read tokens from `.env` files, `.netrc`, CLI configuration, keychains, shell profiles, or anything inside a repository. A single source keeps the agent from picking up a stale or wrongly scoped credential without anyone noticing.
 
-- `SKILL.md` — the entry point: frontmatter (`name`, `description`, optionally `allowed-tools`) plus the instructions Claude follows.
-- `references/` (optional) — supplementary docs too detailed for the main file, which Claude reads on demand.
-- `scripts/` (optional) — standalone helper scripts the skill points users to for repeatable manual runs (e.g. `sonarqube-analysis/scripts/run-scanner.sh`), as distinct from commands Claude runs itself inline.
+The variable's name is not hardcoded, because many environments export several plausible tokens side by side, such as `GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_BOT_TOKEN`, or `SONAR_TOKEN` and `SONARQUBE_PERSONAL_TOKEN`, each tied to a different identity or scope. Every skill resolves the name the same way:
+
+1. **List names only.** In Bash, `compgen -e` prints exported variable names without touching their values. Filter that list with the skill's documented pattern. In other shells, strip values before inspecting anything.
+2. **One candidate:** use it.
+3. **No candidates:** stop and give the user setup steps.
+4. **Several candidates:** ask which one to use, unless the conversation already settles it. Several valid tokens can all succeed against different accounts, so a single question is cheaper than acting under the wrong identity. The skills never probe tokens one by one to find one that works.
+
+Token values are never printed, logged, written to files, or placed in URLs or command arguments. Command arguments can be read by other processes on the same machine, so no example puts a token on a `curl` command line. `github-api` passes the header through a transient curl config. `gitlab-api` and `sonarqube-analysis` pass it as `--header @<(printf ...)`, so curl reads it from a pipe. The SonarScanner container is the one place a token leaves the agent's shell. `docker run -e SONAR_TOKEN` with no `=value` keeps it out of the command's arguments, but Docker stores it in the container's environment. Anyone with access to the Docker daemon can read it there until the container is removed, so run scans only on a Docker host you trust with the token.
+
+How the variable gets into the environment is up to you. Prefer exporting it in the shell that launches the agent, ideally from a secret manager. A line such as `export GITLAB_TOKEN="$(secret-tool lookup service gitlab)"` keeps the token out of plaintext dotfiles. The skills will not write a token into a shell profile for you.
+
+## Repository structure
+
+```text
+<skill-name>/
+├── SKILL.md       # Frontmatter (name, description, compatibility) and the instructions
+├── references/    # Optional: detailed material the agent reads when a step needs it
+└── scripts/       # Optional: standalone helpers a person can run directly
+```
+
+`scripts/` holds tools for repeatable manual runs, such as `sonarqube-analysis/scripts/run-scanner.sh`. They are separate from the commands an agent runs inline while following `SKILL.md`.
+
+### Naming convention
+
+Skill names take the form `<subject>-<activity>`, in lowercase kebab-case, and the folder name always matches the frontmatter `name`.
+
+- The subject is the service or artifact the skill works on, such as `github`, `gitlab`, `sonarqube`, or `pr`.
+- The activity says what the skill does with it. `api` means the skill operates a service only through its HTTP API. Anything broader gets a more specific word: `sonarqube-analysis` also runs a scanner and changes code, and `pr-review` produces an assessment rather than API calls.
+
+New skills should follow the same pattern and avoid names that commonly collide with clients' built-in commands.
 
 ## Contributing
 
-These skills encode specific workflow opinions (e.g. `pr-review`'s evidence-only rule, `gitlab-api`'s env-var-only auth with [multi-candidate resolution](#environment-variable-resolution), `sonarqube-analysis`'s Overall-Code-only rule). If you adapt one, keep the reasoning ("why") comments intact where present — they exist so future edits don't accidentally undo a deliberate constraint.
+These skills encode deliberate constraints. Examples include environment-only credentials, confirmation before outward-facing writes, `pr-review`'s rule that every finding needs evidence, and `sonarqube-analysis`'s exclusive use of Overall Code metrics. If you change a skill, keep the explanations of why each constraint exists. They are there so a later edit does not quietly undo one.
+
+Any new skill that authenticates with a secret should use the resolution procedure above instead of a single hardcoded variable name. Keep agent-specific details out of `SKILL.md`. If something only applies to one client, document it in this README as a labeled example.
 
 ## License
 
-[MIT](LICENSE) — permissive, simple, and standard for this kind of content: mostly instructional markdown with embedded code/shell examples, no patent-sensitive material that would call for Apache 2.0, and no reason to restrict reuse or adaptation.
+[MIT](LICENSE)
