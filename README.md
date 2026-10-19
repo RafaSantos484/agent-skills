@@ -9,7 +9,7 @@ A small collection of custom [Claude Code](https://docs.claude.com/en/docs/claud
 | [`gitlab-api`](gitlab-api/) | Drives GitLab's REST and GraphQL APIs — issues, merge requests, branches, pipelines, labels, epics/work items, members. Authenticates only via an environment variable holding a GitLab token (never from files or CLI config) — see [Environment variable resolution](#environment-variable-resolution) below for how it's chosen among several possible candidates — auto-detects the GitLab host from context instead of assuming `gitlab.com`, and knows when to prefer GraphQL over REST (e.g. epics, vulnerabilities — resources where REST is deprecated or incomplete). |
 | [`github-api`](github-api/) | Reads and changes GitHub repository resources through direct REST and GraphQL requests on GitHub.com or a version-checked Enterprise Server. Uses only a selected environment token; covers repository contents, issues, pull requests, releases, checks, and Actions with explicit safeguards for sensitive writes. Use `pr-review` for evidence-based code review; use `github-api` for GitHub resource operations such as listing PR files or posting an authorized review. |
 | [`pr-review`](pr-review/) | Turns Claude into a rigorous, evidence-only code reviewer against a live git repository — reads the repo's own conventions first (`CLAUDE.md`, linter config, etc.), verifies claims by actually running tests/lint instead of guessing, and outputs a structured review with severity-tagged findings. |
-| [`sonarqube`](sonarqube/) | Runs a SonarQube analysis (coverage generation plus the SonarScanner CLI via Docker) and triages what it reports — issues, coverage, duplication — via the Web API. Authenticates only via an environment variable holding a SonarQube user token — see [Environment variable resolution](#environment-variable-resolution) below — judges the codebase exclusively on Overall Code metrics (never the New Code period or the quality-gate endpoint), and either fixes a valid finding in code or transitions a false positive/accepted one with a recorded justification — never both. Opt-in only: it runs when explicitly asked, not as a side effect of other work. |
+| [`sonarqube-analysis`](sonarqube-analysis/) | Runs a SonarQube analysis (coverage generation plus the SonarScanner CLI via Docker) and triages what it reports — issues, coverage, duplication — via the Web API. Authenticates only via an environment variable holding a SonarQube user token — see [Environment variable resolution](#environment-variable-resolution) below — judges the codebase exclusively on Overall Code metrics (never the New Code period or the quality-gate endpoint), and either fixes a valid finding in code or transitions a false positive/accepted one with a recorded justification — never both. Opt-in only: it runs when explicitly asked, not as a side effect of other work. |
 
 ## Installation
 
@@ -31,7 +31,7 @@ Claude picks up a skill automatically once its folder is in a recognized skills 
 
 ## Environment variable resolution
 
-Several skills here (`gitlab-api`, `github-api`, `sonarqube`) authenticate exclusively
+Several skills here (`gitlab-api`, `github-api`, `sonarqube-analysis`) authenticate exclusively
 through an environment variable holding a secret token, and refuse to read
 that secret from any file, CLI config, or keychain. But the variable's exact
 **name** is deliberately not hardcoded to one value (`GITLAB_TOKEN`,
@@ -73,11 +73,11 @@ Each skill is a folder containing:
 
 - `SKILL.md` — the entry point: frontmatter (`name`, `description`, optionally `allowed-tools`) plus the instructions Claude follows.
 - `references/` (optional) — supplementary docs too detailed for the main file, which Claude reads on demand.
-- `scripts/` (optional) — standalone helper scripts the skill points users to for repeatable manual runs (e.g. `sonarqube/scripts/run-scanner.sh`), as distinct from commands Claude runs itself inline.
+- `scripts/` (optional) — standalone helper scripts the skill points users to for repeatable manual runs (e.g. `sonarqube-analysis/scripts/run-scanner.sh`), as distinct from commands Claude runs itself inline.
 
 ## Contributing
 
-These skills encode specific workflow opinions (e.g. `pr-review`'s evidence-only rule, `gitlab-api`'s env-var-only auth with [multi-candidate resolution](#environment-variable-resolution), `sonarqube`'s Overall-Code-only rule). If you adapt one, keep the reasoning ("why") comments intact where present — they exist so future edits don't accidentally undo a deliberate constraint.
+These skills encode specific workflow opinions (e.g. `pr-review`'s evidence-only rule, `gitlab-api`'s env-var-only auth with [multi-candidate resolution](#environment-variable-resolution), `sonarqube-analysis`'s Overall-Code-only rule). If you adapt one, keep the reasoning ("why") comments intact where present — they exist so future edits don't accidentally undo a deliberate constraint.
 
 ## License
 

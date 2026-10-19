@@ -1,5 +1,5 @@
 ---
-name: sonarqube
+name: sonarqube-analysis
 description: Use this skill whenever the user wants Claude to run a SonarQube analysis or act on its findings for a codebase — running the scanner (coverage generation plus the SonarScanner CLI via Docker), fetching issues/coverage/duplication measures through the SonarQube Web API, triaging and fixing real issues, or transitioning false positives/accepted findings. Trigger on phrases like "run SonarQube", "fix the SonarQube issues", "check code quality with SonarQube", "improve SonarQube coverage/duplication", "set up SonarQube for this project" — even when the project has no `sonar-project.properties` yet.
 ---
 
