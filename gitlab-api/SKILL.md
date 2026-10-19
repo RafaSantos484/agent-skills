@@ -24,13 +24,13 @@ Only then start making requests.
 
 ## 1. Authentication
 
-Authenticate **exclusively** through an environment variable — never through a file or a CLI's stored credentials. This is a hard rule, not a preference. The variable's exact **name** is not fixed to `GITLAB_TOKEN`: real setups often carry several GitLab-token-shaped candidates side by side (`GITLAB_TOKEN`, `GITLAB_BOT_TOKEN`, `GITLAB_PERSONAL_TOKEN`, `GITLAB_ANPD_PERSONAL_TOKEN`, …), so discover which ones exist before picking one.
+Authenticate **only** through an exported environment variable, never through a file or a CLI's stored credentials. This is a hard rule. The variable's name is not fixed to `GITLAB_TOKEN`, because real setups often export several candidates side by side (`GITLAB_TOKEN`, `GITLAB_BOT_TOKEN`, `GITLAB_PERSONAL_TOKEN`, `GITLAB_ANPD_PERSONAL_TOKEN`, …). Discover which ones exist before picking one.
 
-- **List candidate variable names only — never their values:**
+- **List candidate variable names only, never their values:**
   ```bash
-  env | grep -iE '^[A-Z0-9_]*GITLAB[A-Z0-9_]*TOKEN[A-Z0-9_]*=' | cut -d= -f1
+  compgen -e | LC_ALL=C sort -u | grep -iE '^[A-Z0-9_]*GITLAB[A-Z0-9_]*TOKEN[A-Z0-9_]*$'
   ```
-  `cut -d= -f1` keeps only the left-hand side of each `NAME=value` line, so no token value is ever displayed, printed, or logged — only labels. Widen the pattern (e.g. also matching `GL_TOKEN`) if the obvious one turns up nothing.
+  `compgen -e` prints exported variable names without reading their values, so no token can appear in the output. Widen the pattern (for example, to also match `GL_TOKEN`) if the obvious one finds nothing.
 - **Exactly one candidate** → use it, referring to it as `$GITLAB_TOKEN` in the rest of this doc regardless of its actual name (every command below is written against that placeholder — substitute the real name you resolved).
 - **Zero candidates** → treat auth as missing (see below).
 - **More than one candidate** → do not guess which one is "the" token. Ask the user which variable to use, unless something in the conversation already disambiguates it (e.g. the user already named one, or the task explicitly targets an org/instance that only one candidate's name plausibly maps to). When genuinely in doubt, ask — silently picking one risks acting under the wrong identity or scope.
@@ -44,15 +44,15 @@ When none is set, tell the user how to set one up:
 2. Grant the right scope:
    - `api` — full read/write. Needed for anything that creates or changes data, and for **all** GraphQL mutations.
    - `read_api` — read-only. Enough for listing/reading via REST and for GraphQL queries.
-3. Export it before starting a session, under any GitLab-token-shaped name (`GITLAB_TOKEN` by default, or a more specific name like `GITLAB_BOT_TOKEN` if the user already has a naming convention):
+3. Export it in the shell that starts the agent session, under any GitLab-token-shaped name (`GITLAB_TOKEN` by default, or a more specific name like `GITLAB_BOT_TOKEN` if the user already has a naming convention). Reading it without echo keeps it out of shell history:
    ```bash
-   export GITLAB_TOKEN="glpat-xxxxxxxxxxxxxxxxxxxx"
+   read -r -s -p 'GitLab token: ' GITLAB_TOKEN; printf '\n'; export GITLAB_TOKEN
    ```
-4. To persist it across sessions, add that line to `~/.bashrc`, `~/.zshrc`, or the equivalent shell profile.
+4. To make it available in every session, load it from a secret manager when the shell starts (for example, `export GITLAB_TOKEN="$(secret-tool lookup service gitlab)"`) rather than writing the token itself into `~/.bashrc` or another plaintext profile. Never write the token into a profile on the user's behalf.
 
 Personal, project, and group access tokens, OAuth 2.0 tokens, and CI/CD job tokens all work as values for this variable — the skill doesn't care which type it is or what its name is, only that it arrives via a discoverable environment variable.
 
-**Never echo the token** into output shown to the user, into a file, or into a commit. Reference it as `$GITLAB_TOKEN` in commands; don't expand it.
+**Never echo the token** into output shown to the user, into a file, or into a commit. Never place it directly on a command line or in a URL, because command arguments are visible to other processes. Pass it to curl the way every example below does: `--header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN")`. `printf` is a Bash builtin, so the value only travels through a pipe and curl's argument list shows `@/dev/fd/N` instead of the token. A process substitution can be read once, so give each `curl` call its own rather than storing it in a variable.
 
 ## 2. Finding the GitLab host
 
@@ -87,7 +87,7 @@ Once you have the host, build the base URLs:
 Before any write, confirm the token and host actually work together — one cheap call that costs far less than a misdirected `POST`:
 
 ```bash
-curl -sf --header "PRIVATE-TOKEN: $GITLAB_TOKEN" "https://<host>/api/v4/user"
+curl -sf --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") "https://<host>/api/v4/user"
 ```
 
 This returns the authenticated user, and confirms in one shot that the host is right, reachable, and the token is valid for it. `GET /api/v4/version` additionally reports the instance version, which matters when a feature's availability is version-dependent.
@@ -119,7 +119,7 @@ See `references/rest-api.md` and `references/graphql-api.md` for endpoint/query 
 
 ```bash
 curl -s --fail-with-body \
-     --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+     --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
      "https://<host>/api/v4/projects/<id-or-url-encoded-path>/issues"
 ```
 
@@ -129,7 +129,7 @@ curl -s --fail-with-body \
 
 ```bash
 curl -s --fail-with-body --request POST \
-     --header "Authorization: Bearer $GITLAB_TOKEN" \
+     --header @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN") \
      --header "Content-Type: application/json" \
      --data '{"query": "query { currentUser { username } }"}' \
      "https://<host>/api/graphql"
@@ -145,7 +145,7 @@ query($path: ID!) {
 GQL
 )" --argjson v '{"path":"group/project"}' '{query:$q, variables:$v}' \
 | curl -s --fail-with-body --request POST \
-       --header "Authorization: Bearer $GITLAB_TOKEN" \
+       --header @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN") \
        --header "Content-Type: application/json" \
        --data @- "https://<host>/api/graphql"
 ```
@@ -162,19 +162,19 @@ Via REST, three calls:
 
 1. **Resolve the project** (skip if you already have the numeric ID):
    ```bash
-   curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+   curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
         "https://<host>/api/v4/projects/<group%2Fproject>"
    ```
 2. **Resolve the assignee's user ID from their username:**
    ```bash
-   curl -s --fail-with-body --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+   curl -s --fail-with-body --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
         "https://<host>/api/v4/users?username=<username>"
    ```
    An empty `[]` means the username doesn't exist or isn't visible to your token — don't proceed with a guessed ID.
 3. **Create the issue with `assignee_ids`:**
    ```bash
    curl -s --fail-with-body --request POST \
-        --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+        --header @<(printf 'PRIVATE-TOKEN: %s\n' "$GITLAB_TOKEN") \
         --data-urlencode "title=Bug: something broke" \
         --data-urlencode "description=Steps to reproduce..." \
         --data "assignee_ids[]=<user_id>" \

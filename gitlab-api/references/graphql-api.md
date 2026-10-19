@@ -5,7 +5,7 @@ Full docs: https://docs.gitlab.com/api/graphql/
 Schema reference (every type, field, and mutation): https://docs.gitlab.com/api/graphql/reference/
 Interactive explorer: `https://<host>/-/graphql-explorer`
 
-Auth header: `Authorization: Bearer $GITLAB_TOKEN`. Personal, project, and group access tokens and OAuth 2.0 tokens all work. Queries need the `read_api` scope; **all mutations need `api`**. `$GITLAB_TOKEN` here is a placeholder for whichever environment variable name was resolved per `SKILL.md` → "1. Authentication" (candidate discovery, ask-if-ambiguous) — substitute the real variable name in every command below.
+Auth header: `Authorization: Bearer <token>`, always supplied as `--header @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN")` so the value stays out of curl's argument list (see `SKILL.md` → "1. Authentication"). Personal, project, and group access tokens and OAuth 2.0 tokens all work. Queries need the `read_api` scope; **all mutations need `api`**. `$GITLAB_TOKEN` here is a placeholder for whichever environment variable name was resolved per `SKILL.md` → "1. Authentication" (candidate discovery, ask-if-ambiguous) — substitute the real variable name in every command below.
 
 The schema is versionless — individual fields get deprecated with notice (kept for at least six releases, removed only at a major version) rather than the whole API being versioned. If an expected field is missing, check whether it was renamed or deprecated before assuming it never existed. You can preview the post-removal schema by appending `?remove_deprecated=true` to the endpoint.
 
@@ -15,7 +15,7 @@ A POST with a JSON body containing `query` and optionally `variables`:
 
 ```bash
 curl -s --fail-with-body --request POST \
-     --header "Authorization: Bearer $GITLAB_TOKEN" \
+     --header @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN") \
      --header "Content-Type: application/json" \
      --data '{
        "query": "query($path: ID!) { project(fullPath: $path) { name } }",
@@ -37,7 +37,7 @@ query($path: ID!) {
 GQL
 )" --argjson v '{"path":"group/project"}' '{query:$q, variables:$v}' \
 | curl -s --fail-with-body --request POST \
-       --header "Authorization: Bearer $GITLAB_TOKEN" \
+       --header @<(printf 'Authorization: Bearer %s\n' "$GITLAB_TOKEN") \
        --header "Content-Type: application/json" \
        --data @- "https://<host>/api/graphql"
 ```
